@@ -1,4 +1,32 @@
+import os
 from flask import Flask, request, jsonify
+import json
+import calculations
+from calculations import *
+import re
+import time
+import nltk
+import json
+from nltk.stem.porter import PorterStemmer
+from nltk.corpus import stopwords
+
+
+bucket_name = "209092196_212080188_209318666"
+
+# --- Inverted index directories --- #
+body_dir = "body"
+title_dir = "titles"
+anchor_dir = "anchor"
+
+# --- Inverted index files --- #
+body_file = "index"
+title_file = "title_index"
+anchor_file = "anchor_index"
+
+# --- Components JSON files --- #
+title_json = "titles"
+pr_json = "pr"
+
 
 class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
@@ -6,6 +34,36 @@ class MyFlaskApp(Flask):
 
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+
+
+
+def read_json(component):
+    """
+    Reads the json file from the bucket using "json" library
+    :param component: str
+    :return: json
+    """
+    os.system(f"gsutil cp gs://{bucket_name}/{component}/{component}.json .")
+    with open(f"{component}.json") as f:
+        res = json.load(f)
+    return res
+
+
+# --- Initializations --- #
+
+# --- initialize the index for body,title,anchor --- #
+
+body_index = InvertedIndex.read_index(body_dir, body_file,bucket_name)
+
+title_index = InvertedIndex.read_index(title_dir, title_file, bucket_name)
+
+anchor_index = InvertedIndex.read_index(anchor_dir, anchor_file, bucket_name)
+
+# --- read the json file for pagerank ,pageviews, titles --- #
+
+page_rank = read_json(pr_json)
+
+titles = read_json(title_json)
 
 
 @app.route("/search")
@@ -31,6 +89,13 @@ def search():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
+    else:
+        top_n_body = calculations.get_top_n_score_for_queries(query,body_index,body_dir,100)
+        top_n_title =calculations.rank_documents_by_binary_similarity(title_index, query,title_dir, 100)#add arguments
+        top_n_anchor=calculations.rank_documents_by_binary_similarity(anchor_index, query,anchor_dir,100)#add arguments
+        res = merge_results(top_n_title, top_n_body, top_n_anchor,page_rank)
+        res = calculations.get_title(res, titles)
+        # res=[]
 
     # END SOLUTION
     return jsonify(res)
