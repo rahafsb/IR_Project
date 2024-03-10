@@ -91,8 +91,8 @@ def search():
     # BEGIN SOLUTION
     else:
         top_n_body = calculations.get_top_n_score_for_queries(query,body_index,body_dir,100)
-        top_n_title =calculations.rank_documents_by_binary_similarity(title_index, query,title_dir, 100)#add arguments
-        top_n_anchor=calculations.rank_documents_by_binary_similarity(anchor_index, query,anchor_dir,100)#add arguments
+        top_n_title = calculations.rank_documents_by_binary_similarity(title_index, query,title_dir, 100)#add arguments
+        top_n_anchor = calculations.rank_documents_by_binary_similarity(anchor_index, query,anchor_dir,100)#add arguments
         res = merge_results(top_n_title, top_n_body, top_n_anchor,page_rank)
         res = calculations.get_title(res, titles)
         # res=[]

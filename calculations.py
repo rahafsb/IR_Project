@@ -75,7 +75,7 @@ def create_tfidf_matrix_for_query(query, search_index: InvertedIndex, compressor
 def find_documents_with_query_terms(query,search_index: InvertedIndex, compressor):
     candidates = {}
     for token in query:
-      if token in search_index.term_total:
+      if token in search_index.term_total.keys():
         posting_list = search_index.read_a_posting_list(compressor, token, bucket_name)
         if posting_list:
           # Calculate normalized TF-IDF scores for documents containing the token
