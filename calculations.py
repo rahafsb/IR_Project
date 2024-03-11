@@ -18,31 +18,27 @@ bucket_name = "209092196_212080188_209318666"
 
 #tokenize the text while removing all stopwords and stemming each token id needed.
 def tokenize(text, use_stemming=False):
-  stemmer = PorterStemmer()
-  Tokens = [token.group() for token in RE_WORD.finditer(text.lower()) if token.group() not in all_stopwords]
-  if use_stemming:
-    Tokens = [stemmer.stem(token) for token in Tokens]
-  return Tokens
+    stemmer = PorterStemmer()
+    Tokens = [token.group() for token in RE_WORD.finditer(text.lower()) if token.group() not in all_stopwords]
+    if use_stemming:
+        Tokens = [stemmer.stem(token) for token in Tokens]
+    return Tokens
 
 
 def generate_query_tfidf(query, inverted_index: InvertedIndex):
-  query_length = len(query)
-  unique_tokens =np.unique(query)
-
-  epsilon = .0000001
-  query_vec = np.zeros(query_length)
-  counter = Counter(query) #dictionary of each term eith its frequency
-  for token in unique_tokens:
-    if token in inverted_index.term_total.keys() and token in inverted_index.df.keys():  # avoid terms that do not appear in the index.
-      tf = counter[token] / query_length  # total frequency per term divided by the length of the query
-      df = inverted_index.df[token] # document frequency per term
-      idf = math.log((len(inverted_index.doc_length)) / (df + epsilon), 10)  # smoothing
-      try:
-        ind = query.inverted_index(token)
-        query_vec[ind] = tf * idf
-      except:
-        pass
-  return query_vec
+    eps = 0.00000001
+    query_length = len(query)
+    unique_tokens = np.unique(query)
+    query_vec = np.zeros(query_length)
+    counter = Counter(query)
+    for token in unique_tokens:
+        if token in inverted_index.term_total.keys() and token in inverted_index.df.keys():
+            tf = counter[token] / query_length
+            df = inverted_index.df[token]
+            idf = math.log((len(inverted_index.doc_length)) / (df + eps), 10)
+            ind = query.inverted_index(token)
+            query_vec[ind] = tf * idf
+    return query_vec
 
 
 
@@ -58,7 +54,6 @@ def cosine_similarity(doc_mat, query_vec):
     return cosine_similarities
 
 
-  # def generate_document_tfidf_matrix(query_to_search, index, comp):
 def create_tfidf_matrix_for_query(query, search_index: InvertedIndex, compressor):
     # Identifying candidate documents and their scores for the query
     candidate_scores = find_documents_with_query_terms(query, search_index, compressor)
@@ -120,59 +115,30 @@ def get_top_n_score_for_queries(queries_to_search, index: InvertedIndex, comp, n
 
 #######################################################
 
-def merge_results(title_scores, body_scores, anchor_scores, pr,n=100, title_weight=0.45, body_weight=0.34,anchor_weight=0.04, pr_weight=0.12):
-    """
-    This function merge and sort documents retrieved by its weighted score (e.g., title and body).
-
-    Parameters: ----------- title_scores: a dictionary build upon the title index of queries and tuples representing
-    scores as follows: key: query_id value: list of pairs in the following format:(doc_id,score)
-
-    body_scores: a dictionary build upon the body/text index of queries and tuples representing scores as follows:
-    key: query_id value: list of pairs in the following format:(doc_id,score) title_weight: float, for weighted
-    average utilizing title and body scores text_weight: float, for weighted average utilizing title and body scores
-    N: Integer. How many document to retrieve. This argument is passed to topN function. By default, N = 3,
-    for the topN function.
-
-    Returns:
-    -----------
-    dictionary of queries and topN pairs as follows:
-                                                        key: query_id
-                                                        value: list of pairs in the following format:(doc_id,score).
-    """
-    # Find the maximum score in the title, body, and anchor scores list
-
+#def merge_results(title_scores, body_scores, anchor_scores, pr,n=100, title_weight=0.45, body_weight=0.34,anchor_weight=0.04, pr_weight=0.12):
+      # Find the maximum score in the title, body, and anchor scores list
+def merge_results(title_scores):
+    n = 100
+    title_weight = 0.99
     if len(title_scores) != 0:
         max_score_title = max(title_scores, key=lambda x: x[1])[1]
     else:
         max_score_title = 1
 
-    if len(body_scores) != 0:
-        max_score_body = max(body_scores, key=lambda x: x[1])[1]
-    else:
-        max_score_body = 1
-
-    if len(anchor_scores) != 0:
-        max_score_anchor = max(anchor_scores, key=lambda x: x[1])[1]
-    else:
-        max_score_anchor = 1
-
-    # Get all candidate doc_ids
     title_scores= dict(title_scores)
-    body_scores= dict(body_scores)
-    anchor_scores = dict(anchor_scores)
-    all_candidate_docs = set(title_scores.keys()) | set(body_scores.keys()) | set(anchor_scores.keys())
 
-    best_pr = []
-    for wiki_id in all_candidate_docs:
-        wiki_id = str(wiki_id)
-        best_pr += [pr[wiki_id]] if wiki_id in pr else []
-
-    max_pr = max(best_pr) if len(best_pr) != 0 else 1
+    all_candidate_docs = set(title_scores.keys())
+    # best_pr = []
+    # for wiki_id in all_candidate_docs:
+    #     wiki_id = str(wiki_id)
+    #     best_pr += [pr[wiki_id]] if wiki_id in pr else []
+    #
+    # max_pr = max(best_pr) if len(best_pr) != 0 else 1
 
     scores_merged_dict = {}
     # Loop through all the candidate documents
     for doc_id in all_candidate_docs:
-        pr_score = pr[str(doc_id)] * pr_weight / max_pr
+       # pr_score = pr[str(doc_id)] * pr_weight / max_pr
         # Calculate the scores for each metric
 
         try:
@@ -183,21 +149,21 @@ def merge_results(title_scores, body_scores, anchor_scores, pr,n=100, title_weig
                 # Set the title score to 0 if the document ID is not found
                 title_score = 0
 
-            if doc_id in body_scores:
-                # Retrieve the score for the document ID
-                body_score = body_scores[doc_id] * body_weight / max_score_body
-            else:
-                # Set the title score to 0 if the document ID is not found
-                body_score = 0
+            # if doc_id in body_scores:
+            #     # Retrieve the score for the document ID
+            #     body_score = body_scores[doc_id] * body_weight / max_score_body
+            # else:
+            #     # Set the title score to 0 if the document ID is not found
+            #     body_score = 0
+            #
+            # if doc_id in anchor_scores:
+            #     # Retrieve the score for the document ID
+            #     anchor_score = anchor_scores[doc_id] * anchor_weight / max_score_anchor
+            # else:
+            #     # Set the title score to 0 if the document ID is not found
+            #     anchor_score = 0
 
-            if doc_id in anchor_scores:
-                # Retrieve the score for the document ID
-                anchor_score = anchor_scores[doc_id] * anchor_weight / max_score_anchor
-            else:
-                # Set the title score to 0 if the document ID is not found
-                anchor_score = 0
-
-            merged_score = title_score + body_score + anchor_score + pr_score
+            merged_score = title_score #+ body_score + anchor_score + pr_score
             scores_merged_dict[doc_id] = merged_score
         except KeyError:
             continue

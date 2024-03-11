@@ -190,13 +190,33 @@ class InvertedIndex:
                     posting_list.append((doc_id, tf))
                 yield w, posting_list
 
+    # def read_a_posting_list(self, base_dir, w, bucket_name=None):
+    #     posting_list = []
+    #     if not w in self.posting_locs:
+    #         return posting_list
+    #     with closing(MultiFileReader(base_dir, bucket_name)) as reader:
+    #         locs = self.posting_locs[w]
+    #         b = reader.read(locs, self.df[w] * TUPLE_SIZE) #b = reader.read(locs, self.df[w] * TUPLE_SIZE)
+    #         for i in range(self.df[w]):
+    #             doc_id = int.from_bytes(b[i * TUPLE_SIZE:i * TUPLE_SIZE + 4], 'big')
+    #             tf = int.from_bytes(b[i * TUPLE_SIZE + 4:(i + 1) * TUPLE_SIZE], 'big')
+    #             posting_list.append((doc_id, tf))
+    #     return posting_list
     def read_a_posting_list(self, base_dir, w, bucket_name=None):
         posting_list = []
         if not w in self.posting_locs:
             return posting_list
-        with closing(MultiFileReader(base_dir, bucket_name)) as reader:
+
+        # Extract the relevant directory name
+        base_dir_parts = base_dir.split('/')
+        relevant_dir = base_dir_parts[-1] if base_dir_parts[-1] else base_dir_parts[-2]
+
+        # Adjust the path based on the relevant directory name
+        adjusted_base_dir = '/'.join(base_dir_parts[:-1]) if relevant_dir == base_dir_parts[-1] else base_dir
+
+        with closing(MultiFileReader(adjusted_base_dir, bucket_name)) as reader:
             locs = self.posting_locs[w]
-            b = reader.read(locs, self.df[w] * TUPLE_SIZE) #b = reader.read(locs, self.df[w] * TUPLE_SIZE)
+            b = reader.read(locs, self.df[w] * TUPLE_SIZE)
             for i in range(self.df[w]):
                 doc_id = int.from_bytes(b[i * TUPLE_SIZE:i * TUPLE_SIZE + 4], 'big')
                 tf = int.from_bytes(b[i * TUPLE_SIZE + 4:(i + 1) * TUPLE_SIZE], 'big')
