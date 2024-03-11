@@ -18,6 +18,16 @@ bucket_name = "209092196_212080188_209318666"
 
 #tokenize the text while removing all stopwords and stemming each token id needed.
 def tokenize(text, use_stemming=False):
+    """
+    Tokenizes the input text by removing all stopwords and optionally stemming each token.
+
+    Parameters:
+    - text (str): The text to tokenize.
+    - use_stemming (bool, optional): If True, applies stemming to tokens. Defaults to False.
+
+    Returns:
+    - list: A list of processed tokens from the input text.
+    """
     stemmer = PorterStemmer()
     Tokens = [token.group() for token in RE_WORD.finditer(text.lower()) if token.group() not in all_stopwords]
     if use_stemming:
@@ -25,7 +35,63 @@ def tokenize(text, use_stemming=False):
     return Tokens
 
 
+def cosine_similarity(doc_mat, query_vec):
+    """
+      Calculates the cosine similarity between a matrix of document vectors and a query vector.
+
+      Parameters:
+      - doc_mat (numpy.ndarray): A matrix where each row represents a document vector.
+      - query_vec (numpy.ndarray): A vector representing the query.
+
+      Returns:
+      - dict: A dictionary mapping document identifiers to their cosine similarity scores with the query.
+      """
+    epsilon = .0000001
+    dot_products = np.dot(doc_mat, query_vec)
+    doc_norms = np.linalg.norm(doc_mat, axis=1)
+    query_norm = np.linalg.norm(query_vec)
+    cosine_similarities = {}
+    for i, doc_id in enumerate(doc_mat.index):
+      cosine_similarities[doc_id] = dot_products[i] / (doc_norms[i] * (query_norm+epsilon))
+
+    return cosine_similarities
+
+
+def create_tfidf_matrix_for_query(query, search_index: InvertedIndex, compressor):
+    """
+        function constructs a TF-IDF (Term Frequency-Inverse Document Frequency) matrix for a specified query,
+        using a given search index and a compressor to identify and score candidate documents.
+
+        Parameters:
+        -query: List of query terms.
+        -search_index (InvertedIndex): The search index used to locate documents containing the query terms.
+        -compressor: Used in the process of finding documents, though its exact role is not specified in the snippet.
+
+        Returns:
+        -tfidf_matrix (pd.DataFrame): A pandas DataFrame where rows represent unique documents
+        containing at least one query term, columns represent query terms, and values are the TF-IDF scores indicating
+         the relevance of each term in each document to the query.
+
+          """
+    candidate_scores = find_documents_with_query_terms(query, search_index, compressor)
+    unique_docs = np.unique([doc_id for doc_id, _ in candidate_scores.keys()])
+    tfidf_matrix = pd.DataFrame(np.zeros((len(unique_docs), len(query))), index=unique_docs, columns=query)
+    for (doc_id, term), tfidf_score in candidate_scores.items():
+      tfidf_matrix.loc[doc_id, term] = tfidf_score
+    return tfidf_matrix
+
+
 def generate_query_tfidf(query, inverted_index: InvertedIndex):
+    """
+    Generates a TF-IDF vector for a query based on an inverted index.
+
+    Parameters:
+    - query (list of str): The search query as a list of tokens.
+    - inverted_index (InvertedIndex): An instance of InvertedIndex containing indexed documents.
+
+    Returns:
+    - numpy.ndarray: A vector representing the TF-IDF scores for the query.
+    """
     eps = 0.00000001
     query_length = len(query)
     unique_tokens = np.unique(query)
@@ -42,49 +108,22 @@ def generate_query_tfidf(query, inverted_index: InvertedIndex):
 
 
 
-def cosine_similarity(doc_mat, query_vec):
-    epsilon = .0000001
-    dot_products = np.dot(doc_mat, query_vec)
-    doc_norms = np.linalg.norm(doc_mat, axis=1)
-    query_norm = np.linalg.norm(query_vec)
-    cosine_similarities = {}
-    for i, doc_id in enumerate(doc_mat.index):
-      cosine_similarities[doc_id] = dot_products[i] / (doc_norms[i] * (query_norm+epsilon))
-
-    return cosine_similarities
-
-
-def create_tfidf_matrix_for_query(query, search_index: InvertedIndex, compressor):
-    # Identifying candidate documents and their scores for the query
-    candidate_scores = find_documents_with_query_terms(query, search_index, compressor)
-    # Extracting unique candidate document IDs
-    unique_docs = np.unique([doc_id for doc_id, _ in candidate_scores.keys()])
-    # Initializing the matrix with zeros
-    tfidf_matrix = pd.DataFrame(np.zeros((len(unique_docs), len(query))), index=unique_docs, columns=query)
-    # Populating the matrix with TF-IDF scores
-    for (doc_id, term), tfidf_score in candidate_scores.items():
-      tfidf_matrix.loc[doc_id, term] = tfidf_score
-    return tfidf_matrix
-
-  # get_candidate_documents_and_scores
-def find_documents_with_query_terms(query,search_index: InvertedIndex, compressor):
-    candidates = {}
-    for token in query:
-      if token in search_index.term_total.keys():
-        posting_list = search_index.read_a_posting_list(compressor, token, bucket_name)
-        if posting_list:
-          # Calculate normalized TF-IDF scores for documents containing the token
-          normalized_tfidf = [
-            (doc_id, (freq / search_index.doc_length[doc_id]) * math.log10(len(search_index.doc_length) / search_index.df[token])) for
-            doc_id, freq in posting_list if freq > 0.1]
-          # Populate the candidates dictionary with scores
-          for doc_id, tfidf in normalized_tfidf:
-            if tfidf > 0.1:
-              candidates[(doc_id, token)] = candidates.get((doc_id, token), 0) + tfidf
-    return candidates
-
-
 def rank_documents_by_binary_similarity(search_index: InvertedIndex, query_tokens_, component_directory, n):
+    """
+        function ranks documents based on their binary similarity to a set of query tokens, using a given search index
+
+        Parameters:
+        -search_index (InvertedIndex): The search index used to locate documents.
+        -query_tokens_: The raw query input, which is a string or list of strings that needs to be tokenized.
+        -component_directory: The directory (or specific component) used with the search index to read posting lists.
+        -n: The number of top documents to return based on their similarity scores.
+
+        Returns:
+        -ret (list): A list of tuples where each tuple contains a document
+        ID and its similarity score, sorted in descending order
+         of similarity. Only the top n documents are returned.
+        """
+
     query_tokens = tokenize(query_tokens_, True)
     scores = {}
     for token in query_tokens:
@@ -97,9 +136,36 @@ def rank_documents_by_binary_similarity(search_index: InvertedIndex, query_token
 
 # nums = scores
 def get_title(nums,titles):
+    """
+     function retrieves titles for a given set of document IDs from a titles mapping.
+
+     Parameters:
+     -nums: A list of tuples, where each tuple contains a document ID and its similarity score.
+     -titles (dict): A dictionary mapping document IDs (as strings) to their respective titles.
+
+     Returns:
+     A list of tuples, where each tuple contains a document
+     ID and its corresponding title, for the document IDs provided in nums.
+     """
     return [(x[0], titles[str(x[0])]) for x in nums]
 
 def get_top_n_score_for_queries(queries_to_search, index: InvertedIndex, comp, n):
+    """
+    explan:
+      Finds and ranks the top 'n' documents based on their cosine similarity to a given set of query terms.
+      It tokenizes and optionally stems the query terms, creates a TF-IDF matrix for these terms using the given search index,
+      generates a query TF-IDF vector, calculates cosine similarities between this vector and document vectors in the matrix,
+      and sorts the documents based on these similarities to return the top 'n' documents.
+
+    Parameters:
+      - queries_to_search: The query or set of queries to be searched.
+      - index (InvertedIndex): The search index used for finding and scoring documents.
+      - comp: The compressor used for creating the TF-IDF matrix. Its exact role is not specified, but it's involved in the TF-IDF calculation or retrieval process.
+      - n (int): The number of top-scoring documents to return.
+
+    Returns:
+      - A list of tuples, each containing a document ID and its cosine similarity score, representing the top 'n' documents sorted by their relevance to the query.
+    """
     queries_to_search=tokenize(queries_to_search,True)
     tfidf_matrix = create_tfidf_matrix_for_query(queries_to_search, index, comp)
     query_vec= generate_query_tfidf(queries_to_search,index)
@@ -111,13 +177,22 @@ def get_top_n_score_for_queries(queries_to_search, index: InvertedIndex, comp, n
 
 
 
-
-
-#######################################################
-
-#def merge_results(title_scores, body_scores, anchor_scores, pr,n=100, title_weight=0.45, body_weight=0.34,anchor_weight=0.04, pr_weight=0.12):
-      # Find the maximum score in the title, body, and anchor scores list
+#def merge_results(title_scores, body_scores, anchor_scores, pr,n=100, title_weight=0.40, body_weight=0.36,anchor_weight=0.08, pr_weight=0.16):
+# Find the maximum score in the title, body, and anchor scores list
 def merge_results(title_scores):
+    """
+       explan:
+         Merges and normalizes scores from title matches, producing a ranked list of document IDs based on their relevance.
+         This function takes pre-calculated title scores, normalizes these scores using the highest title score and a predefined weight,
+         and returns the top 'n' documents sorted by these normalized scores. The approach highlights the importance of titles in determining document relevance.
+
+       Parameters:
+         - title_scores: A list of tuples or a dictionary, where each tuple or key-value pair represents a document ID and its associated score from title matching.
+
+       Returns:
+         - A list of tuples, each containing a document ID and its normalized score, sorted by score in descending order. The list includes the top 'n' ranked documents based on title relevance.
+       """
+
     n = 100
     title_weight = 0.99
     if len(title_scores) != 0:
@@ -168,6 +243,34 @@ def merge_results(title_scores):
         except KeyError:
             continue
 
-    merged_scores = sorted([(doc_id, score) for doc_id, score in scores_merged_dict.items()], key=lambda x: x[1], reverse=True)[:n]
+    merged_scores = sorted([(str(doc_id), score) for doc_id, score in scores_merged_dict.items()], key=lambda x: x[1], reverse=True)[:n]
 
     return merged_scores
+
+
+def find_documents_with_query_terms(query,search_index: InvertedIndex, compressor):
+    """
+        function identifies and scores documents based on their relevance to given query terms,
+        using a specified search index and compressor.
+
+        Parameters:
+        -query: List of query terms.
+        -search_index (InvertedIndex): The search index used for locating documents that contain the query terms.
+        -compressor: Utilized for reading posting lists from the search index.
+
+        Returns:
+        -candidates (dict): A dictionary where keys are tuples of document ID and query term, and values are the corresponding
+        TF-IDF scores indicating the relevance of each document to the query terms.
+        """
+    candidates = {}
+    for token in query:
+      if token in search_index.term_total.keys():
+        posting_list = search_index.read_a_posting_list(compressor, token, bucket_name)
+        if posting_list:
+          normalized_tfidf = [
+            (doc_id, (freq / search_index.doc_length[doc_id]) * math.log10(len(search_index.doc_length) / search_index.df[token])) for
+            doc_id, freq in posting_list if freq > 0.1]
+          for doc_id, tfidf in normalized_tfidf:
+            if tfidf > 0.1:
+              candidates[(doc_id, token)] = candidates.get((doc_id, token), 0) + tfidf
+    return candidates
