@@ -285,11 +285,9 @@ def read_json(component):
 
 
 title_index = InvertedIndex.read_index(title_dir, title_file, bucket_name)
+# we didn't have the files so we would have added 3 other indexes anchor and body
+# we would have had page_rank
 
-
-# --- read the json file for pagerank ,pageviews, titles --- #
-
-#page_rank = read_json(pr_json)
 
 titles = read_json(title_json)
 
